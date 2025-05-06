@@ -1,141 +1,134 @@
-const { default: makeWASocket, useSingleFileAuthState, DisconnectReason, fetchLatestBaileysVersion, delay } = require('@adiwajshing/baileys');
-const P = require('pino');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
 const express = require('express');
 const bodyParser = require('body-parser');
 const googleSheets = require('./googleSheets');
 const config = require('./config');
-const fs = require('fs');
-const path = require('path');
 
-const PORT = process.env.PORT || 3000;
 const app = express();
 app.use(bodyParser.json());
+const PORT = process.env.PORT || 3000;
 
-const authFile = './auth_info.json';
-const { state, saveState } = useSingleFileAuthState(authFile);
-
-let sock;
-let userLastInteraction = new Map(); // Map to track last interaction time per user
-let userInService = new Map(); // Track if user is chatting with CS
-
-const WELCOME_MESSAGE = `Halo! Selamat datang di layanan chatbot kami. Silakan pilih menu layanan yang tersedia:
-1. Info Produk
-2. Harga
-3. Jam Operasional
-4. Chat dengan Customer Service
-Ketik nomor menu untuk memilih.`;
-
-const CLOSING_MESSAGE = 'Terima kasih telah menggunakan layanan kami. Jika ada pertanyaan lain, silakan hubungi kami kembali. Selamat hari!';
-
-async function startSock() {
-  const { version, isLatest } = await fetchLatestBaileysVersion();
-  console.log(`Using WA version v${version.join('.')}, isLatest: ${isLatest}`);
-
-  sock = makeWASocket({
-    version,
-    logger: P({ level: 'silent' }),
-    printQRInTerminal: true,
-    auth: state
-  });
-
-  sock.ev.on('creds.update', saveState);
-
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
-    if(connection === 'close') {
-      const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log('connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
-      if(shouldReconnect) {
-        startSock();
-      }
-    } else if(connection === 'open') {
-      console.log('opened connection');
+// Inisialisasi WhatsApp client
+const client = new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        args: ['--no-sandbox']
     }
-  });
+});
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if(type !== 'notify') return;
-    const msg = messages[0];
-    if(!msg.message || msg.key.fromMe) return;
+// Map untuk menyimpan status interaksi pengguna
+const userLastInteraction = new Map();
+const userInService = new Map();
 
-    const sender = msg.key.remoteJid;
-    const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+// Event saat QR code tersedia untuk scan
+client.on('qr', (qr) => {
+    console.log('QR Code tersedia untuk di scan:');
+    qrcode.generate(qr, { small: true });
+});
 
-    // Update last interaction time
+// Event saat client siap
+client.on('ready', () => {
+    console.log('Client WhatsApp siap!');
+});
+
+// Event saat menerima pesan
+client.on('message', async msg => {
+    const chat = await msg.getChat();
+    const sender = msg.from;
+    const messageContent = msg.body;
+
+    // Update waktu interaksi terakhir
     userLastInteraction.set(sender, Date.now());
 
-    // Log chat user message
+    // Log pesan ke Google Sheets
     await googleSheets.logChat(new Date().toISOString(), sender, messageContent, '');
 
-    // Check if user is in CS chat mode
-    if(userInService.get(sender) === 'cs') {
-      // Here you can implement forwarding message to CS or other logic
-      await sock.sendMessage(sender, { text: 'Pesan Anda telah diteruskan ke Customer Service. Mohon tunggu.' });
-      return;
+    // Cek jika user sedang dalam mode CS
+    if (userInService.get(sender) === 'cs') {
+        await msg.reply('Pesan Anda telah diteruskan ke Customer Service. Mohon tunggu.');
+        return;
     }
 
-    // If first message or user sends 'menu', send welcome message with buttons
-    if(messageContent.toLowerCase() === 'menu' || messageContent.trim() === '') {
-      await sendMenu(sender);
-      return;
+    // Handle pesan pertama atau command 'menu'
+    if (messageContent.toLowerCase() === 'menu' || !userLastInteraction.has(sender)) {
+        await sendMenu(chat);
+        return;
     }
 
-    // Handle menu options
-    switch(messageContent.trim()) {
-      case '1':
-        await sendReply(sender, 'Info Produk: Kami menyediakan produk berkualitas dengan harga terbaik.');
-        break;
-      case '2':
-        await sendReply(sender, 'Harga: Harga produk kami bervariasi sesuai jenis dan jumlah pembelian.');
-        break;
-      case '3':
-        await sendReply(sender, 'Jam Operasional: Senin - Jumat, 08.00 - 17.00 WIB.');
-        break;
-      case '4':
-        userInService.set(sender, 'cs');
-        await sendReply(sender, 'Anda akan terhubung dengan Customer Service. Silakan tunggu.');
-        break;
-      default:
-        await sendReply(sender, 'Maaf, pilihan tidak dikenali. Silakan ketik "menu" untuk melihat pilihan layanan.');
+    // Handle pilihan menu
+    let botResponse = '';
+    switch (messageContent.trim()) {
+        case '1':
+            botResponse = 'Info Produk: Kami menyediakan berbagai produk berkualitas dengan harga terbaik.';
+            break;
+        case '2':
+            botResponse = 'Harga: Harga produk kami bervariasi sesuai jenis dan jumlah pembelian. Silakan tanyakan produk spesifik yang Anda minati.';
+            break;
+        case '3':
+            botResponse = 'Jam Operasional: Senin - Jumat, 08.00 - 17.00 WIB.';
+            break;
+        case '4':
+            userInService.set(sender, 'cs');
+            botResponse = 'Anda akan terhubung dengan Customer Service kami. Mohon tunggu sebentar.';
+            break;
+        default:
+            botResponse = 'Maaf, pilihan tidak dikenali. Ketik "menu" untuk melihat pilihan layanan yang tersedia.';
     }
 
-    // Log bot response
-    await googleSheets.logChat(new Date().toISOString(), sender, '', 'Bot response sent');
-  });
+    // Kirim respons
+    await chat.sendMessage(botResponse);
 
-  // Periodic check for inactivity
-  setInterval(() => {
+    // Log respons bot ke Google Sheets
+    await googleSheets.logChat(new Date().toISOString(), sender, '', botResponse);
+
+    // Tanyakan apakah ada yang bisa dibantu lagi
+    if (!userInService.get(sender)) {
+        setTimeout(async () => {
+            await chat.sendMessage('Apakah ada yang bisa kami bantu lagi? Ketik "menu" untuk melihat layanan kami, atau ketik "selesai" jika sudah selesai.');
+        }, 2000);
+    }
+});
+
+// Fungsi untuk mengirim menu
+async function sendMenu(chat) {
+    await chat.sendMessage(config.messages.welcome);
+}
+
+// Cek inaktivitas pengguna setiap menit
+setInterval(() => {
     const now = Date.now();
-    for(const [user, lastTime] of userLastInteraction.entries()) {
-      if(now - lastTime > 5 * 60 * 1000) { // 5 minutes
-        sock.sendMessage(user, { text: CLOSING_MESSAGE });
-        userLastInteraction.delete(user);
-        userInService.delete(user);
-      }
+    for (const [user, lastTime] of userLastInteraction.entries()) {
+        if (now - lastTime > config.chatTimeout) {
+            client.sendMessage(user, config.messages.closing);
+            userLastInteraction.delete(user);
+            userInService.delete(user);
+        }
     }
-  }, 60 * 1000); // check every 1 minute
-}
+}, 60000);
 
-async function sendMenu(jid) {
-  const buttons = [
-    { buttonId: '1', buttonText: { displayText: 'Info Produk' }, type: 1 },
-    { buttonId: '2', buttonText: { displayText: 'Harga' }, type: 1 },
-    { buttonId: '3', buttonText: { displayText: 'Jam Operasional' }, type: 1 },
-    { buttonId: '4', buttonText: { displayText: 'Chat dengan CS' }, type: 1 }
-  ];
-  const buttonMessage = {
-    text: 'Halo! Silakan pilih menu layanan yang tersedia:',
-    buttons: buttons,
-    headerType: 1
-  };
-  await sock.sendMessage(jid, buttonMessage);
-}
+// Inisialisasi client WhatsApp
+client.initialize();
 
-async function sendReply(jid, text) {
-  await sock.sendMessage(jid, { text });
-}
-
+// Start server Express
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  startSock();
+    console.log(`Server berjalan di port ${PORT}`);
+});
+
+// Handle error
+client.on('auth_failure', () => {
+    console.error('Autentikasi gagal! Pastikan WhatsApp Web tersambung dengan benar.');
+});
+
+client.on('disconnected', (reason) => {
+    console.log('Client terputus:', reason);
+    client.destroy();
+    client.initialize();
+});
+
+// Tangani proses shutdown dengan baik
+process.on('SIGINT', async () => {
+    console.log('Menutup aplikasi...');
+    await client.destroy();
+    process.exit(0);
 });
