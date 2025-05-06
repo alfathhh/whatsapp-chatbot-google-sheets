@@ -1,80 +1,99 @@
+# WhatsApp Chatbot dengan Google Sheets Integration
 
-Built by https://www.blackbox.ai
+Chatbot WhatsApp yang dapat menangani pesan otomatis dan mencatat log chat ke Google Spreadsheet.
 
----
+## Fitur
 
-# WhatsApp Chatbot
+- Menu layanan dalam bentuk tombol/pilihan nomor
+- Integrasi dengan Google Spreadsheet untuk log chat
+- Opsi untuk chat dengan Customer Service
+- Timeout otomatis setelah 5 menit tidak aktif
+- Penawaran layanan kembali setelah selesai
 
-Chatbot WhatsApp dengan integrasi Google Spreadsheet. Proyek ini memungkinkan pengguna untuk berinteraksi dengan chatbot melalui WhatsApp dan mencatat percakapan ke Google Spreadsheet.
+## Persyaratan
 
-## Project Overview
+- Node.js v14 atau lebih baru
+- Google Cloud Platform account dengan Sheets API yang aktif
+- WhatsApp yang terpasang di smartphone
 
-WhatsApp Chatbot ini menggunakan API WhatsApp untuk memberikan informasi produk, harga, dan jam operasional kepada pengguna. Dengan kemampuan untuk mengarahkan pertanyaan ke Customer Service dan mencatat semua interaksi dalam Google Sheets, chatbot ini bertujuan untuk meningkatkan pengalaman pengguna.
+## Instalasi
 
-## Installation
+1. Clone repository ini
+2. Install dependensi:
+```bash
+npm install
+```
 
-Untuk menjalankan proyek ini, pastikan Anda memiliki [Node.js](https://nodejs.org/) terinstal di komputer Anda. Setelah itu, ikuti langkah-langkah berikut:
+3. Buat file `.env` dari `.env.example` dan isi dengan kredensial Anda:
+```bash
+cp .env.example .env
+```
 
-1. Clone repositori ini:
-   ```bash
-   git clone https://github.com/username/whatsapp-chatbot.git
-   cd whatsapp-chatbot
-   ```
+4. Isi kredensial Google Sheets di file `.env`:
+```
+GOOGLE_SPREADSHEET_ID=your_spreadsheet_id_here
+GOOGLE_CLIENT_EMAIL=your_service_account_email_here
+GOOGLE_PRIVATE_KEY="your_private_key_here"
+```
 
-2. Instal dependensi yang diperlukan:
-   ```bash
-   npm install
-   ```
+## Pengaturan Google Sheets
 
-3. Buat file `.env` di direktori proyek untuk menyimpan variabel lingkungan Anda. Berikut adalah contoh variabel yang harus Anda tambahkan:
-   ```
-   TWILIO_ACCOUNT_SID=your_account_sid
-   TWILIO_AUTH_TOKEN=your_auth_token
-   TWILIO_WHATSAPP_NUMBER=your_whatsapp_number
-   GOOGLE_SPREADSHEET_ID=your_spreadsheet_id
-   GOOGLE_CLIENT_EMAIL=your_service_account_email
-   GOOGLE_PRIVATE_KEY=your_service_account_private_key
-   PORT=3000
-   ```
+1. Buat project baru di [Google Cloud Console](https://console.cloud.google.com)
+2. Aktifkan Google Sheets API
+3. Buat Service Account dan download kredensialnya
+4. Buat spreadsheet baru dan bagikan dengan email service account
+5. Copy Spreadsheet ID dari URL dan masukkan ke `.env`
 
-## Usage
+## Menjalankan Aplikasi
 
-Setelah mengikuti langkah pemasangan, Anda dapat memulai server dengan perintah berikut:
+1. Jalankan server:
 ```bash
 npm start
 ```
 
-Bot akan terhubung ke WhatsApp dan Anda dapat mulai mengirim pesan ke nomor WhatsApp yang telah Anda tentukan.
+2. Scan QR Code yang muncul di terminal dengan WhatsApp di smartphone Anda
+3. Chatbot siap digunakan!
 
-## Features
+## Penggunaan
 
-- Menyediakan informasi produk, harga, dan jam operasional.
-- Menyambungkan pengguna ke Customer Service.
-- Mencatat semua interaksi pengguna ke Google Sheets.
-- Mengirim pesan otomatis berdasarkan pilihan menu pengguna.
+- Kirim pesan apa saja untuk memulai
+- Bot akan menampilkan menu layanan yang tersedia
+- Pilih menu dengan mengetik nomor (1-4)
+- Untuk chat dengan CS, pilih menu 4
+- Ketik "menu" untuk melihat menu kembali
+- Bot akan timeout setelah 5 menit tidak ada interaksi
 
-## Dependencies
+## Struktur Log Chat
 
-Proyek ini bergantung pada beberapa paket NPM yang dapat ditemukan di `package.json`:
+Google Spreadsheet akan mencatat:
+- Timestamp
+- ID Pengirim
+- Pesan User
+- Respons Bot
 
-- `express`: Web framework untuk Node.js
-- `googleapis`: Paket untuk berinteraksi dengan Google APIs
-- `baileys`: Library untuk berinteraksi dengan WhatsApp
-- `body-parser`: Middleware untuk menguraikan badan permintaan
-- `dotenv`: Memuat variabel lingkungan dari file `.env`
+## Troubleshooting
 
-## Project Structure
+1. Jika QR Code tidak muncul:
+   - Pastikan terminal mendukung tampilan QR Code
+   - Coba jalankan ulang aplikasi
 
-Berikut adalah struktur dasar dari proyek ini:
+2. Jika gagal koneksi ke Google Sheets:
+   - Periksa format GOOGLE_PRIVATE_KEY di .env
+   - Pastikan service account memiliki akses ke spreadsheet
 
-```
-whatsapp-chatbot/
-│
-├── .env                # File konfigurasi untuk variabel lingkungan
-├── index.js            # Titik masuk aplikasi
-├── googleSheets.js     # Kelas untuk berinteraksi dengan Google Sheets
-├── config.js           # File konfigurasi untuk WhatsApp dan Google
-└── package.json        # File yang berisi metadata proyek dan dependensi
-```
+3. Jika WhatsApp terputus:
+   - Aplikasi akan mencoba reconnect otomatis
+   - Jika gagal, scan ulang QR Code
 
-Dengan mengikuti instruksi di atas, Anda dapat menjalankan dan mengembangkan chatbot WhatsApp ini sesuai kebutuhan. Jika ada pertanyaan atau masalah, jangan ragu untuk membuka masalah di repositori ini.
+## Pengembangan
+
+Untuk memodifikasi perilaku bot:
+- Edit pesan di `config.js`
+- Tambah/ubah menu di `index.js`
+- Sesuaikan timeout di `config.js`
+
+## Keamanan
+
+- Jangan share kredensial Google Sheets
+- Simpan file .env dengan aman
+- Jangan commit file session WhatsApp ke repository
